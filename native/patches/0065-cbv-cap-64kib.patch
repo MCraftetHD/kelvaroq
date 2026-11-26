@@ -1,0 +1,40 @@
+diff --git a/crates/victory-gpu/src/descriptor/host.rs b/crates/victory-gpu/src/descriptor/host.rs
+index 494a4c1..8ee4741 100644
+--- a/crates/victory-gpu/src/descriptor/host.rs
++++ b/crates/victory-gpu/src/descriptor/host.rs
+@@ -1811,6 +1811,17 @@ impl HostHeap {
+         }
+     }
+ 
++/// Rounds a constant buffer view size to 256 bytes and caps it at 64 KiB,
++/// the most the host takes (a larger size removes the device on NVIDIA).
++fn constant_view_size(size: u32) -> u32 {
++    const MOST: u32 = 4096 * 16;
++    if size > MOST {
++        once!(size, "a constant buffer view over 64 KiB, made 64 KiB (the host takes no more)");
++        return MOST;
++    }
++    size.next_multiple_of(256)
++}
++
+     /// Makes slot `index` (a dynamic one) a constant buffer view of host
+     /// memory (the list's own, which it holds).
+     pub(crate) fn constant_at(&self, index: u32, gpu: u64, size: u32) {
+@@ -1818,7 +1829,7 @@ impl HostHeap {
+         let Some(host) = host() else { return };
+         let desc = D3D12_CONSTANT_BUFFER_VIEW_DESC {
+             BufferLocation: gpu,
+-            SizeInBytes: size.next_multiple_of(256),
++            SizeInBytes: constant_view_size(size),
+         };
+         // SAFETY: a slot of our heap; the memory is the caller's.
+         unsafe {
+@@ -2805,7 +2816,7 @@ pub(crate) fn make(view: &View, at: D3D12_CPU_DESCRIPTOR_HANDLE) -> Option<Kept>
+             }
+             let desc = D3D12_CONSTANT_BUFFER_VIEW_DESC {
+                 BufferLocation: gpu,
+-                SizeInBytes: size.next_multiple_of(256),
++                SizeInBytes: constant_view_size(size),
+             };
+             // SAFETY: a slot of our heap; the range lies in the host copy.
+             unsafe { device.CreateConstantBufferView(Some(&desc), at) };
