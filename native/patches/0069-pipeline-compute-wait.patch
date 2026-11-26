@@ -1,0 +1,24 @@
+diff --git a/crates/victory-gpu/src/pipeline/make.rs b/crates/victory-gpu/src/pipeline/make.rs
+index 61ba4d3..f683866 100644
+--- a/crates/victory-gpu/src/pipeline/make.rs
++++ b/crates/victory-gpu/src/pipeline/make.rs
+@@ -269,7 +269,19 @@ pub(crate) fn ready(p: &Arc<Pending>) -> Option<&HostPipeline> {
+             }
+         }
+     }
++/// Whether compute pipelines wait to be built instead of being dropped
++/// when the frame's build budget runs out (default on; set
++/// `VICTORY_PIPELINE_COMPUTE_WAIT=0` to disable).
++fn compute_waits() -> bool {
++    static ON: OnceLock<bool> = OnceLock::new();
++    *ON.get_or_init(|| std::env::var_os("VICTORY_PIPELINE_COMPUTE_WAIT").is_none_or(|v| v != "0"))
++}
++
+     if p.made.get().is_none() {
++        if p.graphics.is_none() && compute_waits() {
++            p.make();
++            return p.made.get()?.as_ref();
++        }
+         start(p, REQUESTED);
+         if standins() && p.compatibility().is_some() {
+             if let Some(real) = p.made.get() {

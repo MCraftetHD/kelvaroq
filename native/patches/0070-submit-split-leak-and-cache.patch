@@ -1,0 +1,26 @@
+diff --git a/crates/victory-gpu/src/queue.rs b/crates/victory-gpu/src/queue.rs
+index 02d3e6e..a8945da 100644
+--- a/crates/victory-gpu/src/queue.rs
++++ b/crates/victory-gpu/src/queue.rs
+@@ -280,6 +280,7 @@ fn submit_split(this: This, lists: &[This]) {
+             .filter_map(|&l| crate::list::host_list(l))
+             .collect();
+         host.execute(&now);
++        crate::list::tables_done(&lists[..cut]);
+     }
+     if cut < lists.len() {
+         static SEEN: AtomicU64 = AtomicU64::new(0);
+diff --git a/crates/victory-pipeline/src/cache.rs b/crates/victory-pipeline/src/cache.rs
+index 81e57de..7274b1c 100644
+--- a/crates/victory-pipeline/src/cache.rs
++++ b/crates/victory-pipeline/src/cache.rs
+@@ -61,7 +61,8 @@ impl Cache {
+         let tmp = tempfile_in(dir);
+         let mut file = std::fs::OpenOptions::new()
+             .write(true)
+-            .create_new(true)
++            .create(true)
++            .truncate(true)
+             .open(&tmp)?;
+         let written = file.write_all(&output);
+         drop(file);

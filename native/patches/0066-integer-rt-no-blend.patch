@@ -1,0 +1,89 @@
+diff --git a/crates/victory-gpu/src/pipeline.rs b/crates/victory-gpu/src/pipeline.rs
+index 418d6dc..39febc4 100644
+--- a/crates/victory-gpu/src/pipeline.rs
++++ b/crates/victory-gpu/src/pipeline.rs
+@@ -717,6 +717,16 @@ pub(crate) extern "system" fn create_stream(
+         };
+         at += size;
+     }
++    // The whole state is read: integer targets do not blend on the host.
++    #[cfg(windows)]
++    if graphics.integer_targets_do_not_blend() {
++        static SAID: std::sync::Once = std::sync::Once::new();
++        SAID.call_once(|| {
++            tracing::info!(
++                "a pipeline of the title's blends into a render target of integers: blending is off for that target on the host (said once)"
++            );
++        });
++    }
+     hand_out(
+         shaders,
+         #[cfg(windows)]
+diff --git a/crates/victory-gpu/src/pipeline/host.rs b/crates/victory-gpu/src/pipeline/host.rs
+index 93d56a5..d630722 100644
+--- a/crates/victory-gpu/src/pipeline/host.rs
++++ b/crates/victory-gpu/src/pipeline/host.rs
+@@ -91,7 +91,63 @@ impl Default for GraphicsState {
+     }
+ }
+ 
++/// Whether a render target of `format` holds integers (`_UINT`, `_SINT`):
++/// the host does not blend into those.
++fn integer_target(format: DXGI_FORMAT) -> bool {
++    matches!(
++        format,
++        DXGI_FORMAT_R32G32B32A32_UINT
++            | DXGI_FORMAT_R32G32B32A32_SINT
++            | DXGI_FORMAT_R32G32B32_UINT
++            | DXGI_FORMAT_R32G32B32_SINT
++            | DXGI_FORMAT_R16G16B16A16_UINT
++            | DXGI_FORMAT_R16G16B16A16_SINT
++            | DXGI_FORMAT_R32G32_UINT
++            | DXGI_FORMAT_R32G32_SINT
++            | DXGI_FORMAT_R10G10B10A2_UINT
++            | DXGI_FORMAT_R8G8B8A8_UINT
++            | DXGI_FORMAT_R8G8B8A8_SINT
++            | DXGI_FORMAT_R16G16_UINT
++            | DXGI_FORMAT_R16G16_SINT
++            | DXGI_FORMAT_R32_UINT
++            | DXGI_FORMAT_R32_SINT
++            | DXGI_FORMAT_R8G8_UINT
++            | DXGI_FORMAT_R8G8_SINT
++            | DXGI_FORMAT_R16_UINT
++            | DXGI_FORMAT_R16_SINT
++            | DXGI_FORMAT_R8_UINT
++            | DXGI_FORMAT_R8_SINT
++    )
++}
++
+ impl GraphicsState {
++    /// Once the title's whole state is read: blending is off for the
++    /// render targets that hold integers.
++    pub(crate) fn integer_targets_do_not_blend(&mut self) -> bool {
++        let n = (self.targets.NumRenderTargets as usize).min(8);
++        let independent = self.blend.IndependentBlendEnable.as_bool();
++        let of = |i: usize| if independent { i } else { 0 };
++        let wrong: Vec<usize> = (0..n)
++            .filter(|&i| {
++                integer_target(self.targets.RTFormats[i])
++                    && self.blend.RenderTarget[of(i)].BlendEnable.as_bool()
++            })
++            .collect();
++        if wrong.is_empty() {
++            return false;
++        }
++        if !independent {
++            for i in 1..8 {
++                self.blend.RenderTarget[i] = self.blend.RenderTarget[0];
++            }
++            self.blend.IndependentBlendEnable = true.into();
++        }
++        for i in wrong {
++            self.blend.RenderTarget[i].BlendEnable = false.into();
++        }
++        true
++    }
++
+     /// Takes in one subobject of a stream: its type, then its data at +4
+     /// (+8 for those holding pointers).
+     ///
