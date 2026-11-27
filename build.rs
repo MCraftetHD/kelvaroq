@@ -7,6 +7,10 @@ fn main() {
     if env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("windows") {
         return;
     }
+    if env::var_os("WINDIR").is_none() {
+        // Cross-compiling from a non-Windows host: skip Windows-only .NET/rc resource build.
+        return;
+    }
     let out = PathBuf::from(env::var_os("OUT_DIR").unwrap());
     let status = Command::new("python")
         .arg("scripts/build_desktop.py")
