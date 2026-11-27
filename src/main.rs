@@ -13,6 +13,8 @@ mod native;
 mod preload;
 #[cfg(windows)]
 mod preload_process;
+#[cfg(not(windows))]
+mod proton;
 mod package;
 
 use anyhow::{Context, Result, bail};
@@ -50,6 +52,18 @@ enum Action {
         /// Try the native renderer's experimental memory and command optimizations.
         #[arg(long, conflicts_with_all = ["reference", "python", "processor_info", "host_topology"])]
         experimental_render: bool,
+        /// Path to Proton executable or directory (Linux only; auto-detected if omitted).
+        #[cfg(not(windows))]
+        #[arg(long)]
+        proton: Option<PathBuf>,
+        /// Proton compatdata prefix directory (defaults to ~/.local/share/kelvaroq/proton-prefix).
+        #[cfg(not(windows))]
+        #[arg(long)]
+        compat_data: Option<PathBuf>,
+        /// Path to Windows kelvaroq.exe to run under Proton (defaults to sibling kelvaroq.exe).
+        #[cfg(not(windows))]
+        #[arg(long)]
+        windows_exe: Option<PathBuf>,
     },
     /// Verify offscreen D3D12 rendering and readback on hardware adapters.
     Gpu {
@@ -162,6 +176,12 @@ fn run(args: Args) -> Result<ExitCode> {
             options,
             reference,
             experimental_render,
+            #[cfg(not(windows))]
+            proton,
+            #[cfg(not(windows))]
+            compat_data,
+            #[cfg(not(windows))]
+            windows_exe,
         } => {
             #[cfg(windows)]
             if !reference
@@ -176,7 +196,23 @@ fn run(args: Args) -> Result<ExitCode> {
                 }
             }
             #[cfg(not(windows))]
-            let _ = reference;
+            if options.python.is_none()
+                && options.processor_info.is_none()
+                && !options.host_topology
+            {
+                let proton_bin = proton::find_proton(proton.as_deref())?;
+                let win_exe = proton::find_windows_exe(windows_exe.as_deref())?;
+                let image = package::image_path(&options.image)?;
+                return proton::run_with_proton(
+                    &proton_bin,
+                    &win_exe,
+                    &image,
+                    &options.console,
+                    experimental_render,
+                    reference,
+                    compat_data.as_deref(),
+                );
+            }
             if experimental_render {
                 bail!("Le profil de rendu expérimental nécessite le moteur natif Windows.");
             }
