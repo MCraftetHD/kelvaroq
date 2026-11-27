@@ -24,6 +24,8 @@ const EXPERIMENTAL_RENDER: &[(&str, &str)] = &[
     ("VICTORY_SCOPED_CARD_BARRIERS", "1"),
     ("VICTORY_PIPELINE_COMPUTE_WAIT", "1"),
     ("VICTORY_TILES_SMALL_WHEN_FULL_MB", "512"),
+    ("VICTORY_LEVELS_ON_DEMAND", "1"),
+    ("VICTORY_LOG", "warn"),
 ];
 
 /// Approach after XCL b49be18: resolve the host executable relative to the launcher.
