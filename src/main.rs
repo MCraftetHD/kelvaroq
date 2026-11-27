@@ -71,6 +71,9 @@ enum Action {
         #[arg(long)]
         adapter: Option<u32>,
     },
+    /// List detected Steam / GE-Proton installations (Linux only).
+    #[cfg(not(windows))]
+    ListProtons,
 }
 
 #[derive(clap::Args)]
@@ -225,6 +228,17 @@ fn run(args: Args) -> Result<ExitCode> {
             {
                 let _ = adapter;
                 bail!("D3D12 requires Windows");
+            }
+        }
+        #[cfg(not(windows))]
+        Action::ListProtons => {
+            let protons = proton::list_protons();
+            if protons.is_empty() {
+                println!("No Proton installations found.");
+            } else {
+                for (name, path) in protons {
+                    println!("{name}\t{}", path.display());
+                }
             }
         }
     }

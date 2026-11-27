@@ -4,32 +4,8 @@ use std::{
     process::{Command, ExitCode},
 };
 
-/// Locate a Proton executable (`proton` script) from an explicit path,
-/// `KELVAROQ_PROTON`, or common Steam / compatibilitytools.d directories.
-pub(crate) fn find_proton(explicit: Option<&Path>) -> Result<PathBuf> {
-    if let Some(p) = explicit {
-        if p.is_file() {
-            return Ok(p.to_path_buf());
-        }
-        let candidate = p.join("proton");
-        if candidate.is_file() {
-            return Ok(candidate);
-        }
-        bail!("Proton not found at {}", p.display());
-    }
-
-    if let Some(env_p) = std::env::var_os("KELVAROQ_PROTON") {
-        let p = PathBuf::from(env_p);
-        if p.is_file() {
-            return Ok(p);
-        }
-        let candidate = p.join("proton");
-        if candidate.is_file() {
-            return Ok(candidate);
-        }
-        bail!("KELVAROQ_PROTON points to missing path: {}", p.display());
-    }
-
+/// Return all discovered Proton installations `(name, proton_script_path)` sorted newest-first.
+pub(crate) fn list_protons() -> Vec<(String, PathBuf)> {
     let home = std::env::var_os("HOME")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("/tmp"));
@@ -42,32 +18,63 @@ pub(crate) fn find_proton(explicit: Option<&Path>) -> Result<PathBuf> {
         PathBuf::from("/usr/share/steam/compatibilitytools.d"),
     ];
 
-    let mut candidates = Vec::new();
+    let mut found = Vec::new();
     for root in &search_roots {
         if let Ok(entries) = std::fs::read_dir(root) {
             for entry in entries.flatten() {
                 let path = entry.path();
-                let name = entry.file_name();
-                let name_str = name.to_string_lossy();
-                if name_str.contains("Proton") || name_str.contains("proton") || name_str.contains("GE") {
+                let name = entry.file_name().to_string_lossy().into_owned();
+                if name.contains("Proton") || name.contains("proton") || name.contains("GE") {
                     let proton_bin = path.join("proton");
                     if proton_bin.is_file() {
-                        candidates.push(proton_bin);
+                        found.push((name, proton_bin));
                     }
                 }
             }
         }
     }
+    found.sort_by(|a, b| b.0.cmp(&a.0));
+    found.dedup_by(|a, b| a.1 == b.1);
+    found
+}
 
-    // Prefer Proton Experimental or highest-versioned Proton.
-    candidates.sort();
-    candidates.reverse();
-    if let Some(found) = candidates.into_iter().next() {
-        return Ok(found);
+/// Locate a Proton executable (`proton` script) from an explicit path or version
+/// name (e.g. `GE-Proton`, `Experimental`), `KELVAROQ_PROTON`, or auto-detection.
+pub(crate) fn find_proton(explicit: Option<&Path>) -> Result<PathBuf> {
+    let query = explicit
+        .map(|p| p.to_string_lossy().into_owned())
+        .or_else(|| std::env::var("KELVAROQ_PROTON").ok());
+
+    if let Some(ref q) = query {
+        let p = Path::new(q);
+        if p.is_file() {
+            return Ok(p.to_path_buf());
+        }
+        let candidate = p.join("proton");
+        if candidate.is_file() {
+            return Ok(candidate);
+        }
+        // Match by version/name substring (case-insensitive) against installed Protons.
+        let q_lower = q.to_lowercase();
+        let all = list_protons();
+        if let Some((_, bin)) = all
+            .iter()
+            .find(|(name, _)| name.to_lowercase().contains(&q_lower))
+        {
+            return Ok(bin.clone());
+        }
+        bail!(
+            "Proton '{}' not found as a path or installed version. Run `kelvaroq list-protons` to see available versions.",
+            q
+        );
+    }
+
+    if let Some((_, bin)) = list_protons().into_iter().next() {
+        return Ok(bin);
     }
 
     bail!(
-        "Could not find Proton automatically. Pass --proton <path/to/proton> or set KELVAROQ_PROTON."
+        "Could not find Proton automatically. Pass --proton <version|path> or set KELVAROQ_PROTON."
     )
 }
 
